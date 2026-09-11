@@ -13,7 +13,7 @@ Plugin de WordPress con el sistema de citas de **Sixcuarenta 640 Barbería** (M�
 **Tech Stack:**
 - Base de datos: Supabase (PostgreSQL vía REST)
 - Calendarios: Google Calendar (OAuth2, por barbero + por local)
-- Versión: 1.20.0
+- Versión: 1.21.0
 
 ## Estructura
 
@@ -27,7 +27,7 @@ includes/
   class-manage.php            Gestión de cita por cliente (token-based)
 admin/                        UI y assets del panel de administración
 public/                       Formulario de reserva (shortcode) + assets
-assets/shortcode.php          Registro del shortcode [six40_booking]
+assets/shortcode.php          Registro del shortcode [six40_booking_form]
 ```
 
 ## Instalación
@@ -49,7 +49,7 @@ Ir a **Six40 Booking → Configuración** y rellenar:
 - Email remitente y días festivos (opcional)
 
 ### 4. Publicar
-Insertar el shortcode `[six40_booking]` en la página de reservas.
+Insertar el shortcode `[six40_booking_form]` en la página de reservas.
 
 ## Cambios de horario temporales
 
@@ -60,15 +60,17 @@ Insertar el shortcode `[six40_booking]` en la página de reservas.
 **Desde el admin:**
 1. Ir a **Six40 Booking → Barberos**
 2. En la tarjeta del barbero, sección "CAMBIOS DE HORARIO TEMPORALES"
-3. Agregar: Desde/Hasta + Hora inicio/fin
-4. ✅ Las franjas se suman (no reemplazan)
+3. Agregar: tipo (✅ Disponible / ❌ No disponible) + Desde/Hasta + Hora inicio/fin
+4. **Disponible** suma la franja al horario regular; **No disponible** la resta
+5. Si ese día el barbero tiene vacaciones, baja o día libre, un cambio
+   "Disponible" le deja trabajar **solo** en la franja añadida (su horario
+   regular sigue cerrado)
 
 ## Notas de desarrollo
 
 - Configuración local sensible: `six40-config.php` (gitignorado)
 - Reglas de duración: duplicadas en `class-booking-api.php` (backend) y `public/js/booking.js` (frontend) — sincronizar si cambias
 - Barberos hardcodeados: en `public/js/booking.js` (`barbersByLocation`, avatares) y tabla `barbers` en Supabase
-- Hardcodes actuales: Adrián (ID 8) disponible 3-7 agosto 16:00-20:00 en Torremolinos
 
 ## Migraciones
 

@@ -186,6 +186,10 @@ $page = sanitize_text_field( $_GET['page'] ?? 'six40-citas' );
               <?php endforeach; endif; ?>
             </div>
             <div class="six40-exc-add">
+              <select class="six40-exc-type" aria-label="Tipo" title="Tipo de cambio">
+                <option value="available">✅ Disponible</option>
+                <option value="unavailable">❌ No disponible</option>
+              </select>
               <input type="date" class="six40-exc-from" aria-label="Desde" title="Desde">
               <input type="date" class="six40-exc-to" aria-label="Hasta" title="Hasta">
               <input type="text" class="six40-exc-start-time" aria-label="Hora inicio" placeholder="16:00" pattern="\d{2}:\d{2}" title="HH:MM">

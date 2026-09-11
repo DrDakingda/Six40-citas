@@ -213,6 +213,21 @@ CREATE INDEX IF NOT EXISTS idx_appt_status          ON public.appointments (stat
 CREATE INDEX IF NOT EXISTS idx_appt_email           ON public.appointments (customer_email);
 CREATE INDEX IF NOT EXISTS idx_appt_manage_token    ON public.appointments (manage_token);
 
+-- Un barbero no puede tener dos citas solapadas (rango semiabierto: las citas
+-- encadenadas 10:00-10:40 y 10:40-11:00 no chocan). Las canceladas no cuentan.
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+DO $$
+BEGIN
+  IF NOT EXISTS ( SELECT 1 FROM pg_constraint WHERE conname = 'appt_no_overlap' ) THEN
+    ALTER TABLE public.appointments
+      ADD CONSTRAINT appt_no_overlap
+      EXCLUDE USING gist (
+        barber_id WITH =,
+        tsrange( (date + start_time), (date + end_time) ) WITH &&
+      ) WHERE (status <> 'cancelled');
+  END IF;
+END $$;
+
 -- Trigger updated_at
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$

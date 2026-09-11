@@ -53,7 +53,11 @@ class Six40_Booking_API {
 		$data = json_decode( wp_remote_retrieve_body( $response ), true );
 
 		if ( $code >= 400 ) {
-			return new WP_Error( 'supabase_error', $data['message'] ?? $data['error'] ?? "HTTP $code" );
+			return new WP_Error(
+				'supabase_error',
+				$data['message'] ?? $data['error'] ?? "HTTP $code",
+				[ 'status' => $code, 'pg_code' => $data['code'] ?? '' ]
+			);
 		}
 
 		return $data ?? [];
@@ -83,11 +87,22 @@ class Six40_Booking_API {
 	 * @return array|WP_Error|null
 	 */
 	public function get_service( $id ) {
-		$result = $this->supabase_request( 'GET', 'services', [], [ 'id' => 'eq.' . intval( $id ) ] );
-		if ( is_wp_error( $result ) || empty( $result ) ) {
-			return null;
+		$id = intval( $id );
+
+		// Cache por petición: calculate_service_duration() pide los mismos
+		// servicios varias veces y cada get_service() es una llamada HTTP.
+		static $cache = [];
+		if ( array_key_exists( $id, $cache ) ) {
+			return $cache[ $id ];
 		}
-		return isset( $result[0] ) ? $result[0] : $result;
+
+		$result = $this->supabase_request( 'GET', 'services', [], [ 'id' => 'eq.' . $id ] );
+		if ( is_wp_error( $result ) || empty( $result ) ) {
+			return null; // los fallos no se cachean
+		}
+
+		$cache[ $id ] = isset( $result[0] ) ? $result[0] : $result;
+		return $cache[ $id ];
 	}
 
 	// ── Public: Barbers ───────────────────────────────────────────────────────
@@ -246,24 +261,17 @@ class Six40_Booking_API {
 			if ( $only_barber_id && (int) $barber['id'] !== (int) $only_barber_id ) {
 				continue;
 			}
-			if ( in_array( $barber['id'], $barbers_off, true ) ) {
-				continue;
-			}
+			// Día libre, vacaciones o baja: solo puede trabajar si tiene un
+			// cambio de horario temporal para esa fecha.
+			$is_off = in_array( $barber['id'], $barbers_off, true )
+				|| ( $statuses[ $barber['id'] ] ?? 'available' ) !== 'available';
 
-			// Get barber's schedule for this day (considerando cambios temporales)
+			// Horario de ese día (considerando cambios temporales)
 			$regular_schedule = $this->get_barber_schedule( $barber['id'], $day_of_week );
-			$schedule = $this->get_schedule_for_date( $barber['id'], $date, $regular_schedule, $location );
-
-			// Si hay cambio temporal, permitir trabajo (ignora vacaciones/baja)
-			$has_exception = ! empty( $schedule ) && $schedule !== $regular_schedule;
+			$schedule = $this->get_schedule_for_date( $barber['id'], $date, $regular_schedule, $is_off );
 
 			if ( empty( $schedule ) ) {
-				continue; // Barber doesn't work this day
-			}
-
-			// Solo aplicar restricción de vacaciones/baja si NO hay cambio temporal
-			if ( ! $has_exception && ( $statuses[ $barber['id'] ] ?? 'available' ) !== 'available' ) {
-				continue;
+				continue; // No trabaja ese día
 			}
 
 			$slots = $this->slots_for_barber( $schedule, $busy_map[ (int) $barber['id'] ] ?? [], $total_duration );
@@ -285,7 +293,7 @@ class Six40_Booking_API {
 		// Filter out times in the past (for today)
 		$today = wp_date( 'Y-m-d' );
 		if ( $date === $today ) {
-			$cutoff = ( new \DateTime( 'now' ) )->modify( '+30 minutes' )->format( 'H:i' );
+			$cutoff = ( new \DateTime( 'now', wp_timezone() ) )->modify( '+30 minutes' )->format( 'H:i' );
 			$available_slots = array_values( array_filter( $available_slots, function( $s ) use ( $cutoff ) {
 				return $s >= $cutoff;
 			} ) );
@@ -443,18 +451,16 @@ class Six40_Booking_API {
 
 			foreach ( $barbers as $b ) {
 				$bid = (int) $b['id'];
-				$regular_windows = (array) ( $sched[ $bid ][ $dow ] ?? [] );
-				$windows = $this->get_schedule_for_date( $bid, $d, $regular_windows, $location );
+				// Mismas restricciones que get_available_slots(): día libre,
+				// vacaciones o baja solo se salvan con un cambio temporal.
+				$is_off = ! empty( $days_off[ $d ][ $bid ] )
+					|| $this->barber_on_vacation( $vac, $bid, $d )
+					|| ( $statuses[ $bid ] ?? 'available' ) !== 'available';
 
-				// Si hay cambio temporal, permitir trabajo (ignora vacaciones/baja/días libres)
-				$has_exception = ! empty( $windows ) && $windows !== $regular_windows;
+				$regular_windows = (array) ( $sched[ $bid ][ $dow ] ?? [] );
+				$windows = $this->get_schedule_for_date( $bid, $d, $regular_windows, $is_off );
 
 				if ( empty( $windows ) ) {
-					continue;
-				}
-
-				// Solo aplicar restricciones si NO hay cambio temporal
-				if ( ! $has_exception && ( ! empty( $days_off[ $d ][ $bid ] ) || $this->barber_on_vacation( $vac, $bid, $d ) ) ) {
 					continue;
 				}
 				$slots = $this->slots_for_barber( $windows, $busy_by_day[ $d ][ $bid ] ?? [], $duration );
@@ -486,35 +492,117 @@ class Six40_Booking_API {
 		return false;
 	}
 
-	/** Obtener los horarios a usar para un barbero en una fecha (considerando cambios temporales) */
-	private function get_schedule_for_date( $barber_id, $date, $regular_windows, $location = '' ) {
-		$added_windows = [];
+	/**
+	 * Cambios de horario temporales que aplican a un barbero en una fecha
+	 * (option six40_schedule_exceptions), separados por tipo.
+	 *
+	 * @return array [ 'add' => [ tramos ], 'remove' => [ tramos ] ]
+	 */
+	private function schedule_exceptions_for_date( $barber_id, $date ) {
+		$add    = [];
+		$remove = [];
 
-		// HARDCODE: Adrián (ID 8) en Torremolinos, 3-7 agosto, 16:00-20:00
-		if ( $barber_id == 8 && $location === 'torremolinos' && $date >= '2026-08-03' && $date <= '2026-08-07' ) {
-			$added_windows[] = [ 'start_time' => '16:00:00', 'end_time' => '20:00:00' ];
-		}
-
-		$exceptions = (array) get_option( 'six40_schedule_exceptions', [] );
-		$barber_excs = (array) ( $exceptions[ $barber_id ] ?? [] );
+		$exceptions  = (array) get_option( 'six40_schedule_exceptions', [] );
+		$barber_excs = (array) ( $exceptions[ (int) $barber_id ] ?? [] );
 
 		foreach ( $barber_excs as $exc ) {
 			$s = $exc['start'] ?? '';
 			$e = $exc['end'] ?? '';
-			if ( $s && $e && $date >= $s && $date <= $e ) {
-				$start_time = $exc['start_time'] ?? '';
-				$end_time   = $exc['end_time'] ?? '';
-				if ( $start_time && $end_time ) {
-					$added_windows[] = [ 'start' => $start_time, 'end' => $end_time ];
+			if ( ! $s || ! $e || $date < $s || $date > $e ) {
+				continue;
+			}
+			$start_time = $exc['start_time'] ?? '';
+			$end_time   = $exc['end_time'] ?? '';
+			if ( ! $start_time || ! $end_time ) {
+				continue;
+			}
+			// Las claves tienen que ser start_time/end_time: es lo que lee
+			// slots_for_barber() y lo que devuelve Supabase.
+			$window = [ 'start_time' => $start_time, 'end_time' => $end_time ];
+			if ( ( $exc['type'] ?? 'available' ) === 'unavailable' ) {
+				$remove[] = $window;
+			} else {
+				$add[] = $window;
+			}
+		}
+
+		return [ 'add' => $add, 'remove' => $remove ];
+	}
+
+	/**
+	 * Tramos horarios efectivos de un barbero en una fecha concreta.
+	 *
+	 * Un cambio temporal "disponible" SUMA al horario regular. Si ese día el
+	 * barbero está libre / de vacaciones / de baja, el cambio le deja trabajar
+	 * pero SOLO en la franja añadida (su horario regular sigue cerrado). Un
+	 * cambio "no disponible" resta su franja del resultado.
+	 *
+	 * @param int    $barber_id
+	 * @param string $date            'YYYY-MM-DD'
+	 * @param array  $regular_windows Tramos del horario semanal para ese día
+	 * @param bool   $is_off          Día libre, vacaciones o baja
+	 * @return array Tramos [ ['start_time','end_time'], ... ]
+	 */
+	private function get_schedule_for_date( $barber_id, $date, $regular_windows, $is_off = false ) {
+		$exc = $this->schedule_exceptions_for_date( $barber_id, $date );
+
+		$windows = $is_off
+			? $exc['add']
+			: array_merge( (array) $regular_windows, $exc['add'] );
+
+		return $this->subtract_windows( $windows, $exc['remove'] );
+	}
+
+	/**
+	 * Resta unos tramos de otros (en minutos), partiendo los que se solapan.
+	 *
+	 * @param array $windows Tramos [ ['start_time','end_time'], ... ]
+	 * @param array $remove  Tramos a quitar, mismo formato
+	 * @return array Tramos resultantes
+	 */
+	private function subtract_windows( $windows, $remove ) {
+		$cuts = [];
+		foreach ( (array) $remove as $r ) {
+			$s = $this->time_to_mins( $r['start_time'] ?? '' );
+			$e = $this->time_to_mins( $r['end_time'] ?? '' );
+			if ( $e > $s ) {
+				$cuts[] = [ $s, $e ];
+			}
+		}
+		if ( empty( $cuts ) ) {
+			return $windows;
+		}
+
+		$out = [];
+		foreach ( (array) $windows as $w ) {
+			$pieces = [ [ $this->time_to_mins( $w['start_time'] ?? '' ), $this->time_to_mins( $w['end_time'] ?? '' ) ] ];
+			foreach ( $cuts as $cut ) {
+				$next = [];
+				foreach ( $pieces as $p ) {
+					if ( $cut[1] <= $p[0] || $cut[0] >= $p[1] ) {
+						$next[] = $p; // sin solape
+						continue;
+					}
+					if ( $cut[0] > $p[0] ) {
+						$next[] = [ $p[0], $cut[0] ];
+					}
+					if ( $cut[1] < $p[1] ) {
+						$next[] = [ $cut[1], $p[1] ];
+					}
+				}
+				$pieces = $next;
+			}
+			foreach ( $pieces as $p ) {
+				if ( $p[1] > $p[0] ) {
+					$out[] = [
+						'start_time' => $this->mins_to_time( $p[0] ),
+						'end_time'   => $this->mins_to_time( $p[1] ),
+					];
 				}
 			}
 		}
 
-		// Si hay cambios temporales, SUMA al horario regular
-		if ( ! empty( $added_windows ) ) {
-			return array_merge( (array) $regular_windows, $added_windows );
-		}
-		return $regular_windows;
+		return $out;
 	}
 
 	// ── Public: Appointments ──────────────────────────────────────────────────
@@ -554,6 +642,11 @@ class Six40_Booking_API {
 		// Validate location
 		if ( ! in_array( $location, [ 'malaga', 'torremolinos' ], true ) ) {
 			return new WP_Error( 'invalid_location', 'Invalid location.' );
+		}
+
+		// Nunca en el pasado.
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', (string) $date ) || $date < wp_date( 'Y-m-d' ) ) {
+			return new WP_Error( 'past_date', 'Esa fecha ya no está disponible.' );
 		}
 
 		// Domingos y festivos: cerrado.
@@ -620,11 +713,17 @@ class Six40_Booking_API {
 			if ( ! $barber_id ) {
 				return new WP_Error( 'no_barber', 'No barbers available at this time.' );
 			}
-		}
-
-		// El barbero no puede tener día libre o vacaciones en esa fecha.
-		if ( in_array( (int) $barber_id, $this->get_barber_ids_off_on_date( $date ), true ) ) {
-			return new WP_Error( 'barber_off', 'El barbero no está disponible ese día.' );
+		} else {
+			// Barbero elegido por el cliente: el hueco tiene que seguir libre.
+			// get_available_slots() ya contempla horario, días libres, vacaciones,
+			// baja, cambios temporales, citas existentes y Google Calendar.
+			$slots = $this->get_available_slots( $location, $date, $service_ids, (int) $barber_id );
+			if ( is_wp_error( $slots ) ) {
+				return $slots;
+			}
+			if ( ! in_array( $start_time, (array) $slots, true ) ) {
+				return new WP_Error( 'slot_unavailable', 'Esa hora ya no está disponible. Elige otra, por favor.' );
+			}
 		}
 
 		// Create appointment
@@ -644,6 +743,12 @@ class Six40_Booking_API {
 		$result = $this->supabase_request( 'POST', 'appointments', $appt_data );
 
 		if ( is_wp_error( $result ) ) {
+			// Choque con la restricción antisolapamiento de Postgres: alguien
+			// confirmó ese hueco entre que se pintaron las horas y este submit.
+			$err = (array) $result->get_error_data();
+			if ( in_array( $err['pg_code'] ?? '', [ '23505', '23P01' ], true ) ) {
+				return new WP_Error( 'slot_taken', 'Esa hora acaba de ocuparse. Elige otra, por favor.' );
+			}
 			return $result;
 		}
 
@@ -864,10 +969,9 @@ class Six40_Booking_API {
 		$to = $year_month . '-' . date( 't', strtotime( $from ) );
 		return $this->supabase_request( 'GET', 'barber_days_off', [], [
 			'barber_id' => 'eq.' . intval( $barber_id ),
-			'date' => 'gte.' . $from,
-			'date' => 'lte.' . $to,
-			'select' => 'id,date,note',
-			'order' => 'date.asc',
+			'and'       => '(date.gte.' . $from . ',date.lte.' . $to . ')',
+			'select'    => 'id,date,note',
+			'order'     => 'date.asc',
 		] );
 	}
 
@@ -1265,16 +1369,13 @@ class Six40_Booking_API {
 		// que get_available_slots) contiene la hora pedida. Así el barbero mostrado
 		// en el resumen y el asignado coinciden siempre.
 		foreach ( $barbers as $barber ) {
-			if ( in_array( $barber['id'], $barbers_off, true ) ) {
-				continue;
-			}
+			// Mismas reglas que get_available_slots(): un cambio de horario
+			// temporal permite trabajar aunque esté libre o de baja.
+			$is_off = in_array( $barber['id'], $barbers_off, true )
+				|| ( $statuses[ $barber['id'] ] ?? 'available' ) !== 'available';
 
-			if ( ( $statuses[ $barber['id'] ] ?? 'available' ) !== 'available' ) {
-				continue;
-			}
-
-			// Check schedule
-			$schedule = $this->get_barber_schedule( $barber['id'], $day_of_week );
+			$regular_schedule = $this->get_barber_schedule( $barber['id'], $day_of_week );
+			$schedule = $this->get_schedule_for_date( $barber['id'], $date, $regular_schedule, $is_off );
 			if ( empty( $schedule ) ) {
 				continue;
 			}

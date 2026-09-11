@@ -17,6 +17,7 @@ Ejecutar en **Supabase → SQL Editor** en este orden (todas son seguras de re-e
 | 5 | `supabase-migration-gestion.sql` | Token de gestión por cita + índice |
 | 6 | `supabase-migration-sync-calendarios.sql` | Columna `google_events` para sincronización |
 | 7 | `supabase-migration-graciela-solo-malaga.sql` | Restricción de disponibilidad por local |
+| 8 | `supabase-migration-antisolapamiento.sql` | Impide dos citas solapadas del mismo barbero |
 
 ## Cómo aplicar
 

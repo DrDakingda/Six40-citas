@@ -103,6 +103,7 @@
   // Cambios de horario temporales: añadir
   $(document).on('click', '.six40-exc-add-btn', function(){
     var $btn = $(this), bid = $btn.data('id'), $exc = $btn.closest('.six40-exc');
+    var type = $exc.find('.six40-exc-type').val() || 'available';
     var from = $exc.find('.six40-exc-from').val(), to = $exc.find('.six40-exc-to').val();
     var startTime = $exc.find('.six40-exc-start-time').val(), endTime = $exc.find('.six40-exc-end-time').val();
     if (!from || !to) { toast('Elige fecha desde y hasta.','error'); return; }
@@ -110,7 +111,7 @@
     if (to < from) { toast('"Hasta" no puede ser anterior a "desde".','error'); return; }
     if (endTime <= startTime) { toast('La hora fin debe ser posterior al inicio.','error'); return; }
     $btn.prop('disabled',true).text('…');
-    var data = { action:'six40_add_schedule_exception', nonce:six40Admin.nonce, barber_id:bid, type:'available', start:from, end:to, start_time:startTime, end_time:endTime };
+    var data = { action:'six40_add_schedule_exception', nonce:six40Admin.nonce, barber_id:bid, type:type, start:from, end:to, start_time:startTime, end_time:endTime };
     $.post(six40Admin.ajaxUrl, data, function(res){
       if (res.success) { toast('Cambio de horario añadido.','success'); location.reload(); }
       else { toast('Error: '+(res.data||'No se pudo añadir.'),'error'); $btn.prop('disabled',false).text('Añadir'); }
