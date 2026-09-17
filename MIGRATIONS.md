@@ -18,6 +18,7 @@ Ejecutar en **Supabase → SQL Editor** en este orden (todas son seguras de re-e
 | 6 | `supabase-migration-sync-calendarios.sql` | Columna `google_events` para sincronización |
 | 7 | `supabase-migration-graciela-solo-malaga.sql` | Restricción de disponibilidad por local |
 | 8 | `supabase-migration-antisolapamiento.sql` | Impide dos citas solapadas del mismo barbero |
+| 9 | `supabase-migration-corte-nino-12.sql` | Renombra "Corte Niño" a "Corte Niño hasta 12 años" |
 
 ## Cómo aplicar
 

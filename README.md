@@ -13,7 +13,7 @@ Plugin de WordPress con el sistema de citas de **Sixcuarenta 640 Barbería** (M�
 **Tech Stack:**
 - Base de datos: Supabase (PostgreSQL vía REST)
 - Calendarios: Google Calendar (OAuth2, por barbero + por local)
-- Versión: 1.21.0
+- Versión: 1.22.0
 
 ## Estructura
 

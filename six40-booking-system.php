@@ -3,7 +3,7 @@
  * Plugin Name: Six40 Booking System
  * Plugin URI:  https://sixcuarenta640.com/
  * Description: Sistema de citas para Sixcuarenta 640 Barbería (Málaga y Torremolinos).
- * Version:     1.21.0
+ * Version:     1.22.0
  * Author:      Katibu
  * Author URI:  https://katibu.es/
  * License:     GPL-2.0+
@@ -13,10 +13,32 @@
 defined( 'ABSPATH' ) || exit;
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-define( 'SIX40_VERSION',    '1.21.0' );
+define( 'SIX40_VERSION',    '1.22.0' );
 define( 'SIX40_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SIX40_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'SIX40_PLUGIN_FILE', __FILE__ );
+
+// ── Locales ────────────────────────────────────────────────────────────────────
+/**
+ * Datos de cada local: nombre visible, dirección y enlace de Google Maps.
+ * Se usan en el correo de confirmación y en el evento de Google Calendar.
+ *
+ * @return array [ 'malaga' => [ 'label', 'address', 'maps' ], 'torremolinos' => [...] ]
+ */
+function six40_locations() {
+    return [
+        'malaga' => [
+            'label'   => 'Málaga',
+            'address' => 'Av. San Sebastián, 5, Gamarra, 29010 Málaga',
+            'maps'    => 'https://maps.app.goo.gl/GCp7C1E4WhPoqbfA8',
+        ],
+        'torremolinos' => [
+            'label'   => 'Torremolinos',
+            'address' => 'Av. Marifé de Triana, 4, Playamar, 29620 Torremolinos',
+            'maps'    => 'https://maps.app.goo.gl/PomRAWbud5uCjkvw5',
+        ],
+    ];
+}
 
 // ── Autoload ───────────────────────────────────────────────────────────────────
 require_once SIX40_PLUGIN_DIR . 'includes/class-booking-api.php';

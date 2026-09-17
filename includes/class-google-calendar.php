@@ -91,6 +91,7 @@ class Six40_Google_Calendar {
 
         $event = [
             'summary'     => sprintf( '%s — %s', $service_label, $appointment['customer_name'] ?? '' ),
+            'location'    => six40_locations()[ $appointment['location'] ?? '' ]['address'] ?? '',
             'description' => $description,
             'start' => [ 'dateTime' => "{$date}T{$time_start}:00", 'timeZone' => 'Europe/Madrid' ],
             'end'   => [ 'dateTime' => "{$date}T{$time_end}:00",   'timeZone' => 'Europe/Madrid' ],

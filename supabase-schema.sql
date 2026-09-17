@@ -150,7 +150,7 @@ CREATE POLICY "svc_read" ON public.services FOR SELECT USING (active = true);
 INSERT INTO public.services (id, name, duration, type, category, location, price, price_from, display_order) VALUES
   -- ── MÁLAGA ──
   (1,  'Corte',                     30, 'base',       'corte',       'malaga', 15.00, false, 1),
-  (2,  'Corte Niño',                30, 'base',       'corte',       'malaga', 12.50, false, 2),
+  (2,  'Corte Niño hasta 12 años',  30, 'base',       'corte',       'malaga', 12.50, false, 2),
   (3,  'Rapado',                    20, 'base',       'corte',       'malaga', 10.00, false, 3),
   (4,  'Arreglo de barba a máquina',15, 'base',       'barba',       'malaga',  8.00, false, 10),
   (5,  'Arreglo de barba a navaja', 20, 'base',       'barba',       'malaga', 10.00, false, 11),
@@ -162,7 +162,7 @@ INSERT INTO public.services (id, name, duration, type, category, location, price
   (14, 'Iluminaciones',             30, 'additional', 'tratamiento', 'malaga', 12.00, false, 34),
   -- ── TORREMOLINOS ──
   (20, 'Corte',                     30, 'base',       'corte',       'torremolinos', 17.00, false, 1),
-  (21, 'Corte Niño',                30, 'base',       'corte',       'torremolinos', 15.00, false, 2),
+  (21, 'Corte Niño hasta 12 años',  30, 'base',       'corte',       'torremolinos', 15.00, false, 2),
   (22, 'Rapado',                    20, 'base',       'corte',       'torremolinos', 13.00, false, 3),
   (23, 'Arreglo de barba a máquina',15, 'base',       'barba',       'torremolinos',  8.00, false, 10),
   (24, 'Arreglo de barba a navaja', 20, 'base',       'barba',       'torremolinos', 12.00, false, 11),

@@ -16,7 +16,7 @@ class Six40_Email {
             return new WP_Error( 'invalid_email', 'Invalid customer email.' );
         }
 
-        $loc_labels = [ 'malaga' => 'Málaga', 'torremolinos' => 'Torremolinos' ];
+        $loc = six40_locations()[ $appointment['location'] ?? '' ] ?? [];
 
         // Build service string from services array
         $service_names = [];
@@ -33,7 +33,9 @@ class Six40_Email {
 
         $data = [
             'customer_name'  => $appointment['customer_name'] ?? '',
-            'location_label' => $loc_labels[ $appointment['location'] ?? '' ] ?? '',
+            'location_label'   => $loc['label'] ?? '',
+            'location_address' => $loc['address'] ?? '',
+            'location_maps'    => $loc['maps'] ?? '',
             'service_label'  => $service_label,
             'date_fmt'       => $this->format_date( $appointment['date'] ?? '' ),
             'time_fmt'       => substr( $appointment['start_time'] ?? '', 0, 5 ),
@@ -102,8 +104,15 @@ class Six40_Email {
           <tr><td style="padding:24px 28px;">
             <table width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                <td style="padding:7px 0;color:#888;font-size:13px;width:130px;">📍 Local</td>
-                <td style="padding:7px 0;color:#000000;font-size:15px;font-weight:700;"><?= esc_html( $d['location_label'] ) ?></td>
+                <td valign="top" style="padding:7px 0;color:#888;font-size:13px;width:130px;">📍 Local</td>
+                <td valign="top" style="padding:7px 0;color:#000000;font-size:15px;font-weight:700;">
+                  <?= esc_html( $d['location_label'] ) ?>
+                  <?php if ( $d['location_address'] && $d['location_maps'] ) : ?>
+                  <br><a href="<?= esc_url( $d['location_maps'] ) ?>" style="color:#555555;font-size:13px;font-weight:400;text-decoration:underline;"><?= esc_html( $d['location_address'] ) ?></a>
+                  <?php elseif ( $d['location_address'] ) : ?>
+                  <br><span style="color:#555555;font-size:13px;font-weight:400;"><?= esc_html( $d['location_address'] ) ?></span>
+                  <?php endif; ?>
+                </td>
               </tr>
               <tr>
                 <td style="padding:7px 0;color:#888;font-size:13px;">✂️ Servicio(s)</td>
